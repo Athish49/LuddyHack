@@ -275,25 +275,33 @@ async def analyze_tone(payload: TranscriptInput = None):
 
 
 def create_jira_issue(issue_dict,transition):
-  issue = jira.create_issue(fields=issue_dict)
-  print(f"✅ Created: {issue.key}")
+  try:
+      issue = jira.create_issue(fields=issue_dict)
+      print(f"✅ Created: {issue.key}")
 
-  # Step 2: Get available transitions from current state
-  transitions = jira.transitions(issue)
+      # Step 2: Get available transitions from current state
+      transitions = jira.transitions(issue)
 
-  # Debug print to see available transitions
-  print("\n🔁 Available transitions:")
-  for t in transitions:
-      print(f"- {t['name']} (ID: {t['id']})")
+      # Debug print to see available transitions
+      print("\n🔁 Available transitions:")
+      for t in transitions:
+          print(f"- {t['name']} (ID: {t['id']})")
 
-  # Step 3: Find and apply the "Contract Sent" transition
-  contract_sent_id = next((t['id'] for t in transitions if t['name'].lower() == transition), None)
+      # Step 3: Find and apply the "Contract Sent" transition
+      contract_sent_id = next((t['id'] for t in transitions if t['name'].lower() == transition), None)
 
-  if contract_sent_id:
-      jira.transition_issue(issue, contract_sent_id)
-      print(f"🚀 {issue.key} moved to {transition}")
-  else:
-      print("❌ 'Contract Sent' transition not available. Check workflow or status.")
+      if contract_sent_id:
+          jira.transition_issue(issue, contract_sent_id)
+          print(f"🚀 {issue.key} moved to {transition}")
+      else:
+          print("❌ 'Contract Sent' transition not available. Check workflow or status.")
+      
+      return {"message": f"Issue {issue.key} created successfully"}
+  except Exception as e:
+      print(f"Error in create_jira_issue: {str(e)}")
+      import traceback
+      traceback.print_exc()
+      raise e
 
 
 prompt_template_jira = PromptTemplate(
@@ -333,17 +341,28 @@ Transcript:
 
 @app.post("/jira-deal-creation/")
 async def jira_deal_creatition(payload: TranscriptInput):
-    transcript_text = payload.transcript_text
+    try:
+        transcript_text = payload.transcript_text
 
-    llm_chain_jira = LLMChain(llm=llm, prompt=prompt_template_jira, verbose=True)
-    extracted_details = llm_chain_jira.run({"transcript": transcript_text})
+        llm_chain_jira = LLMChain(llm=llm, prompt=prompt_template_jira, verbose=True)
+        extracted_details = llm_chain_jira.run({"transcript": transcript_text})
 
-    new_deal = json.loads(extracted_details)
-    deal_details = {key: value for key, value in new_deal.items() if key != 'transition_name'}
-    transition_name = new_deal['transition_name']
+        new_deal = json.loads(extracted_details)
+        deal_details = {key: value for key, value in new_deal.items() if key != 'transition_name'}
+        transition_name = new_deal['transition_name']
 
-    output = create_jira_issue(deal_details, transition_name)
-    return output
+        # Add debugging for Jira connection
+        print("Jira server:", JIRA_SERVER)
+        print("Jira email:", JIRA_EMAIL)
+        print("Jira API token exists:", bool(JIRA_API_TOKEN))
+        
+        output = create_jira_issue(deal_details, transition_name)
+        return output
+    except Exception as e:
+        print(f"Error in Jira deal creation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Error creating Jira issue: {str(e)}"}
 
 
 
